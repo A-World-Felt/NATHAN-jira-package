@@ -1,5 +1,6 @@
 import type { Config, Task, StatusCategory } from './types.js';
 import { statusInfo } from './mapping.js';
+import { textToAdf, adfToText } from './adf.js';
 
 type FetchFn = typeof fetch;
 
@@ -22,18 +23,6 @@ export interface SeedClient {
   linkBlocks(blockerKey: string, blockedKey: string): Promise<void>;
 }
 
-function textToAdf(text: string) {
-  const paras = (text || '').split(/\r?\n/).map((line) =>
-    line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' });
-  return { type: 'doc', version: 1, content: paras.length ? paras : [{ type: 'paragraph' }] };
-}
-function adfToText(node: any): string {
-  if (!node) return '';
-  if (typeof node === 'string') return node;
-  if (node.type === 'text') return node.text || '';
-  const inner = (node.content || []).map(adfToText).join('');
-  return node.type === 'paragraph' ? inner + '\n' : inner;
-}
 function roleLabel(role: string): string {
   return `role-${(role || 'NA').replace(/\s+/g, '_')}`;
 }
