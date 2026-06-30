@@ -337,3 +337,36 @@ describe('createRisk', () => {
     expect(txt).toContain('Filtres courts');
   });
 });
+
+// ---------------------------------------------------------------------------
+// createSubtask
+// ---------------------------------------------------------------------------
+
+import { createSubtask } from '../src/jira-write.js';
+
+describe('createSubtask', () => {
+  it('crée une Sous-tâche avec parent et labels (HTTP 201)', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: '/issue', status: 201, body: { key: 'GES-42' } },
+    ]);
+    const key = await createSubtask(client, 'GES', 'Ordre du jour', 'GES-10', {
+      start: '2026-06-01',
+      due: '2026-06-15',
+      labels: ['nid-SEC-s8-1'],
+    });
+    expect(key).toBe('GES-42');
+    const call = client.calls[0];
+    expect(call.body.fields.issuetype.name).toBe('Sous-tâche');
+    expect(call.body.fields.parent.key).toBe('GES-10');
+    expect(call.body.fields.labels).toContain('nid-SEC-s8-1');
+  });
+
+  it('throws on HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: '/issue', status: 400, body: 'Bad Request' },
+    ]);
+    await expect(
+      createSubtask(client, 'GES', 'X', 'GES-10', {}),
+    ).rejects.toThrow('HTTP 400');
+  });
+});
