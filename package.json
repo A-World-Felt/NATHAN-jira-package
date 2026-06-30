@@ -1,7 +1,6 @@
 {
-  "name": "nathan-jira-core",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@a-world-felt/nathan-jira-core",
+  "version": "1.0.0",
   "type": "module",
   "description": "Couche JIRA partagée NATHAN : client, conventions, types, mapping.",
   "main": "./dist/index.js",
@@ -15,6 +14,10 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
