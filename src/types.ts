@@ -48,3 +48,11 @@ export interface SeedPlan {
   existingLinks: string[];
   summary: { create: number; update: number; skip: number; orphans: number; duplicates: number };
 }
+
+/** Client HTTP de base injecté dans les primitives JIRA bas-niveau.
+ *  JiraWriteClient (Phase 2B) et la future interface restore.ts (Phase 2C) l'étendent. */
+export interface JiraHttpClient {
+  baseUrl: string;
+  authHeader: string;
+  fetchFn: typeof fetch;
+}
