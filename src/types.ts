@@ -1,4 +1,4 @@
-export type StatusCategory = 'todo' | 'in_progress' | 'done' | 'cancelled';
+export type StatusCategory = 'todo' | 'in_progress' | 'review' | 'blocked' | 'done' | 'cancelled';
 
 export interface Task {
   id: string;                 // ex. "MIP-19" (= label nid-)
@@ -55,4 +55,15 @@ export interface JiraHttpClient {
   baseUrl: string;
   authHeader: string;
   fetchFn: typeof fetch;
+}
+
+/** Configuration minimale de connexion JIRA.
+ *  Utilisée par snapshot/restore sans dépendance vers gestion.
+ *  LiveConfig de gestion satisfait ce type structurellement. */
+export interface JiraConnConfig {
+  baseUrl: string;
+  email: string;
+  apiToken: string;
+  projectKeys: string[];
+  riskProject: string;
 }
