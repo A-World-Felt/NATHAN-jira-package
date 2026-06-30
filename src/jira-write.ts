@@ -119,6 +119,43 @@ export async function createTask(
 }
 
 /**
+ * Crée une Sous-tâche rattachée à une Tâche parente.
+ * POST /rest/api/3/issue  (issuetype Sous-tâche, parent=parentKey).
+ * Renvoie la clé de la sous-tâche créée.
+ */
+export async function createSubtask(
+  client: JiraWriteClient,
+  project: string,
+  summary: string,
+  parentKey: string,
+  fields: { start?: string | null; due?: string | null; labels?: string[] },
+): Promise<string> {
+  const f: Record<string, unknown> = {
+    project: { key: project },
+    issuetype: { name: 'Sous-tâche' },
+    summary,
+    parent: { key: parentKey },
+  };
+  if (fields.due) f.duedate = fields.due;
+  if (fields.start && client.startFieldId) f[client.startFieldId] = fields.start;
+  if (fields.labels?.length) f.labels = fields.labels;
+
+  const res = await client.fetchFn(`${client.baseUrl}/rest/api/3/issue`, {
+    method: 'POST',
+    headers: buildHeaders(client),
+    body: JSON.stringify({ fields: f }),
+  });
+  if (!res.ok && res.status !== 201) {
+    const text = (await res.text()).slice(0, 300);
+    throw new Error(
+      `createSubtask(${project}, "${summary}", parent=${parentKey}) HTTP ${res.status}: ${text}`,
+    );
+  }
+  const data: { key: string } = await res.json();
+  return data.key;
+}
+
+/**
  * Résout le statut courant d'une issue via un appel de lecture.
  * GET /rest/api/3/issue/{key}?fields=status → fields.status.name (ou null).
  */
