@@ -1,0 +1,339 @@
+/**
+ * jira-write.test.ts — TDD des primitives génériques d'écriture JIRA.
+ *
+ * SÛRETÉ : AUCUN appel JIRA réel. Tout passe par un fetch MOCKÉ.
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  isRealJiraKey,
+  createEpic,
+  createTask,
+  transitionTo,
+  linkDep,
+  restructureOriginal,
+  deleteIssue,
+  carryStatusThenDelete,
+  createRisk,
+  type JiraWriteClient,
+} from '../src/jira-write.js';
+
+// ---------------------------------------------------------------------------
+// Fake client avec routes + journal d'appels
+// ---------------------------------------------------------------------------
+
+type FakeRoute = {
+  method?: string;
+  urlPart: string;
+  status: number;
+  body: unknown;
+};
+
+interface Call {
+  method: string;
+  url: string;
+  body: any;
+}
+
+function makeFakeClient(
+  routes: FakeRoute[],
+  startFieldId: string | null = 'customfield_10015',
+): JiraWriteClient & { calls: Call[] } {
+  const calls: Call[] = [];
+  const fetchFn: typeof fetch = async (input, init) => {
+    const url = input.toString();
+    const method = (init?.method ?? 'GET').toUpperCase();
+    let parsedBody: any;
+    if (init?.body && typeof init.body === 'string') {
+      try { parsedBody = JSON.parse(init.body); } catch { parsedBody = init.body; }
+    }
+    calls.push({ method, url, body: parsedBody });
+    for (const route of routes) {
+      const routeMethod = (route.method ?? 'POST').toUpperCase();
+      if (routeMethod === method && url.includes(route.urlPart)) {
+        return new Response(
+          typeof route.body === 'string' ? route.body : JSON.stringify(route.body),
+          { status: route.status },
+        );
+      }
+    }
+    return new Response(JSON.stringify({ error: `No route ${method} ${url}` }), { status: 404 });
+  };
+  return { baseUrl: 'https://fake.atlassian.net', authHeader: 'Basic fake=', startFieldId, fetchFn, calls };
+}
+
+// ---------------------------------------------------------------------------
+// isRealJiraKey
+// ---------------------------------------------------------------------------
+
+describe('isRealJiraKey', () => {
+  it('reconnaît une clé réelle', () => {
+    expect(isRealJiraKey('LIVS-32')).toBe(true);
+    expect(isRealJiraKey('DC-1')).toBe(true);
+  });
+  it('rejette les key_temp', () => {
+    expect(isRealJiraKey('LIVS-MIP')).toBe(false);
+    expect(isRealJiraKey('GES-PROCESS')).toBe(false);
+    expect(isRealJiraKey('RISK-REG')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createEpic
+// ---------------------------------------------------------------------------
+
+describe('createEpic', () => {
+  it('POST /issue avec issuetype Epic et renvoie la clé', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-100' } },
+    ]);
+    const key = await createEpic(client, 'LIVS', 'MIP — Mémoire');
+    expect(key).toBe('LIVS-100');
+    const body = client.calls[0].body;
+    expect(body.fields.issuetype.name).toBe('Epic');
+    expect(body.fields.project.key).toBe('LIVS');
+    expect(body.fields.summary).toBe('MIP — Mémoire');
+  });
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 400, body: { errorMessages: ['bad'] } },
+    ]);
+    await expect(createEpic(client, 'LIVS', 'X')).rejects.toThrow(/400/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTask
+// ---------------------------------------------------------------------------
+
+describe('createTask', () => {
+  it('POST /issue Task avec parent=epicKey, duedate, start, labels', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-200' } },
+    ]);
+    const key = await createTask(
+      client, 'LIVS', 'Analyse', 'LIVS-100', '2026-06-08', '2026-06-11', ['nid-MIP-02'],
+    );
+    expect(key).toBe('LIVS-200');
+    const f = client.calls[0].body.fields;
+    expect(f.issuetype.name).toBe('Task');
+    expect(f.parent.key).toBe('LIVS-100');
+    expect(f.duedate).toBe('2026-06-11');
+    expect(f['customfield_10015']).toBe('2026-06-08');
+    expect(f.labels).toContain('nid-MIP-02');
+  });
+
+  it('ne pose PAS le champ start si startFieldId est null', async () => {
+    const client = makeFakeClient(
+      [{ method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-201' } }],
+      null,
+    );
+    await createTask(client, 'LIVS', 'X', 'LIVS-100', '2026-06-08', null, []);
+    const f = client.calls[0].body.fields;
+    expect(f.customfield_10015).toBeUndefined();
+  });
+
+  it('ne pose JAMAIS timetracking (time-tracking off)', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-202' } },
+    ]);
+    await createTask(client, 'LIVS', 'X', 'LIVS-100', null, null, []);
+    expect(client.calls[0].body.fields.timetracking).toBeUndefined();
+  });
+
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 400, body: { errorMessages: ['bad'] } },
+    ]);
+    await expect(createTask(client, 'LIVS', 'X', 'LIVS-100', null, null, [])).rejects.toThrow(/400/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transitionTo
+// ---------------------------------------------------------------------------
+
+describe('transitionTo', () => {
+  it('résout le statut courant via GET ?fields=status puis POST la transition cible', async () => {
+    const client = makeFakeClient([
+      {
+        method: 'GET', urlPart: 'issue/DC-5?fields=status', status: 200,
+        body: { fields: { status: { name: 'À faire' } } },
+      },
+      {
+        method: 'GET', urlPart: '/transitions', status: 200,
+        body: { transitions: [
+          { id: '11', to: { name: 'À faire' } },
+          { id: '21', to: { name: 'PCB - À faire' } },
+        ] },
+      },
+      { method: 'POST', urlPart: '/transitions', status: 204, body: '' },
+    ]);
+    const moved = await transitionTo(client, 'DC-5', 'PCB - À faire');
+    expect(moved).toBe(true);
+    expect(client.calls.some((c) => c.method === 'GET' && c.url.includes('issue/DC-5?fields=status'))).toBe(true);
+    const post = client.calls.find((c) => c.method === 'POST')!;
+    expect(post.body.transition.id).toBe('21');
+  });
+
+  it('succès silencieux (false) si le statut courant est DÉJÀ la cible', async () => {
+    const client = makeFakeClient([
+      {
+        method: 'GET', urlPart: 'issue/LIVS-20?fields=status', status: 200,
+        body: { fields: { status: { name: 'En cours' } } },
+      },
+    ]);
+    const moved = await transitionTo(client, 'LIVS-20', 'En cours');
+    expect(moved).toBe(false);
+    expect(client.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    expect(client.calls.some((c) => c.method === 'GET' && c.url.includes('/transitions'))).toBe(false);
+  });
+
+  it('lève si la transition cible est introuvable (statut courant différent)', async () => {
+    const client = makeFakeClient([
+      {
+        method: 'GET', urlPart: 'issue/LIVS-1?fields=status', status: 200,
+        body: { fields: { status: { name: 'À faire' } } },
+      },
+      {
+        method: 'GET', urlPart: '/transitions', status: 200,
+        body: { transitions: [{ id: '11', to: { name: 'À faire' } }] },
+      },
+    ]);
+    await expect(transitionTo(client, 'LIVS-1', 'Statut Inexistant')).rejects.toThrow(/introuvable/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// linkDep — FS→Blocks, SS→Relates
+// ---------------------------------------------------------------------------
+
+describe('linkDep', () => {
+  it('FS → lien Blocks (prereq BLOCKS task) — inwardIssue=prereq (sens JIRA réel)', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issueLink', status: 201, body: '' },
+    ]);
+    await linkDep(client, 'LIVS-10', 'LIVS-20', 'FS');
+    const b = client.calls[0].body;
+    expect(b.type.name).toBe('Blocks');
+    expect(b.inwardIssue.key).toBe('LIVS-10');
+    expect(b.outwardIssue.key).toBe('LIVS-20');
+  });
+
+  it('SS → lien Relates (non bloquant)', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issueLink', status: 201, body: '' },
+    ]);
+    await linkDep(client, 'LIVS-10', 'LIVS-20', 'SS');
+    expect(client.calls[0].body.type.name).toBe('Relates');
+  });
+
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issueLink', status: 400, body: { errorMessages: ['x'] } },
+    ]);
+    await expect(linkDep(client, 'A-1', 'A-2', 'FS')).rejects.toThrow(/400/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// restructureOriginal — garde le statut, pose parent+dates
+// ---------------------------------------------------------------------------
+
+describe('restructureOriginal', () => {
+  it('PUT /issue/{key} avec parent et dates, sans toucher au statut', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/LIVS-1', status: 204, body: '' },
+    ]);
+    await restructureOriginal(client, 'LIVS-1', 'LIVS-EVAL', '2026-05-18', '2026-05-21');
+    const call = client.calls[0];
+    expect(call.method).toBe('PUT');
+    expect(call.url).toContain('LIVS-1');
+    const f = call.body.fields;
+    expect(f.parent.key).toBe('LIVS-EVAL');
+    expect(f.duedate).toBe('2026-05-21');
+    expect(f['customfield_10015']).toBe('2026-05-18');
+    expect(f.status).toBeUndefined();
+  });
+
+  it('omet les dates nulles', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/RISK-1', status: 204, body: '' },
+    ]);
+    await restructureOriginal(client, 'RISK-1', 'RISK-REG', null, null);
+    const f = client.calls[0].body.fields;
+    expect(f.duedate).toBeUndefined();
+    expect(f.customfield_10015).toBeUndefined();
+    expect(f.parent.key).toBe('RISK-REG');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteIssue
+// ---------------------------------------------------------------------------
+
+describe('deleteIssue', () => {
+  it('DELETE /issue/{key}?deleteSubtasks=true', async () => {
+    const client = makeFakeClient([
+      { method: 'DELETE', urlPart: 'rest/api/3/issue/DC-1', status: 204, body: '' },
+    ]);
+    await deleteIssue(client, 'DC-1');
+    const call = client.calls[0];
+    expect(call.method).toBe('DELETE');
+    expect(call.url).toContain('deleteSubtasks=true');
+  });
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'DELETE', urlPart: 'rest/api/3/issue/DC-1', status: 400, body: { e: 1 } },
+    ]);
+    await expect(deleteIssue(client, 'DC-1')).rejects.toThrow(/400/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// carryStatusThenDelete — report PUIS suppression
+// ---------------------------------------------------------------------------
+
+describe('carryStatusThenDelete', () => {
+  it('transitionne le jumeau PUIS supprime (dans cet ordre)', async () => {
+    const client = makeFakeClient([
+      {
+        method: 'GET', urlPart: 'issue/LIVS-26?fields=status', status: 200,
+        body: { fields: { status: { name: 'À faire' } } },
+      },
+      {
+        method: 'GET', urlPart: 'LIVS-26/transitions', status: 200,
+        body: { transitions: [{ id: '41', to: { name: 'Revision' } }] },
+      },
+      { method: 'POST', urlPart: 'LIVS-26/transitions', status: 204, body: '' },
+      { method: 'DELETE', urlPart: 'rest/api/3/issue/LIVS-3', status: 204, body: '' },
+    ]);
+    await carryStatusThenDelete(client, 'LIVS-3', 'LIVS-26', 'Revision');
+    const delIdx = client.calls.findIndex((c) => c.method === 'DELETE');
+    const postIdx = client.calls.findIndex((c) => c.method === 'POST');
+    expect(postIdx).toBeGreaterThanOrEqual(0);
+    expect(delIdx).toBeGreaterThan(postIdx);
+    expect(client.calls[delIdx].url).toContain('LIVS-3');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createRisk
+// ---------------------------------------------------------------------------
+
+describe('createRisk', () => {
+  it('POST /issue dans RISK avec labels bloc- et description sévérité/mitigation', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'RISK-50' } },
+    ]);
+    const key = await createRisk(client, 'RISK', 'HRTF sur MCU', 'Critique', 'Filtres courts', ['bloc-audio']);
+    expect(key).toBe('RISK-50');
+    const f = client.calls[0].body.fields;
+    expect(f.project.key).toBe('RISK');
+    expect(f.summary).toBe('HRTF sur MCU');
+    expect(f.labels).toContain('bloc-audio');
+    const txt = JSON.stringify(f.description);
+    expect(txt).toContain('Critique');
+    expect(txt).toContain('Filtres courts');
+  });
+});
