@@ -7,11 +7,15 @@ import type { StatusCategory } from './types.js';
 const DONE = new Set(['terminé(e)', 'terminé', 'done', 'fermé', 'closed', 'résolu', 'resolved']);
 const CANCELLED = new Set(['annulé', 'annulée', 'cancelled', 'canceled']);
 
-/** Déduit la catégorie de statut JIRA depuis le nom de statut et les labels d'une issue. */
+/** Déduit la catégorie de statut JIRA depuis le nom de statut et les labels d'une issue.
+ *  Le nom est testé en SOUS-CHAÎNE (comme « bloqu »/« cours ») pour tolérer les statuts de
+ *  workflow préfixés (ex. « Web - Terminé », « Game Engine - Terminé »). L'ordre importe :
+ *  annulé avant terminé (un statut ne contient jamais les deux en pratique). */
 export function deriveCategory(status: string, labels: string[]): StatusCategory {
   const s = (status || '').trim().toLowerCase();
-  if (labels.some((l) => CANCELLED.has(l.toLowerCase())) || CANCELLED.has(s)) return 'cancelled';
-  if (DONE.has(s)) return 'done';
+  const nameHas = (set: Set<string>) => [...set].some((w) => s.includes(w));
+  if (labels.some((l) => CANCELLED.has(l.toLowerCase())) || nameHas(CANCELLED)) return 'cancelled';
+  if (nameHas(DONE)) return 'done';
   if (s.includes('bloqu') || s === 'blocked') return 'blocked';
   if (s.startsWith('révis') || s.startsWith('revis') || s === 'review') return 'review';
   if (s.includes('cours') || s === 'in progress') return 'in_progress';
