@@ -8,6 +8,13 @@ describe('deriveCategory', () => {
     expect(deriveCategory('terminé', [])).toBe('done');
     expect(deriveCategory('Done', [])).toBe('done');
   });
+  it('done pour statut terminé PRÉFIXÉ (workflow custom, ex. « Web - Terminé »)', () => {
+    expect(deriveCategory('Web - Terminé', [])).toBe('done');
+    expect(deriveCategory('Game Engine - Terminé', [])).toBe('done');
+  });
+  it('cancelled pour statut annulé préfixé', () => {
+    expect(deriveCategory('Web - Annulé', [])).toBe('cancelled');
+  });
   it('in_progress pour En cours / in progress', () => {
     expect(deriveCategory('En cours', [])).toBe('in_progress');
     expect(deriveCategory('in progress', [])).toBe('in_progress');
