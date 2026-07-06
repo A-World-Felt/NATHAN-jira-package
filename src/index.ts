@@ -1,6 +1,5 @@
 // src/index.ts
 export { JiraClient } from './jira-client.js';
-export type { SeedClient } from './jira-client.js';
 export { loadConfig } from './config.js';
 export { sessionFromDate, statusInfo, computeOrder, findOrphanDeps, hasCycle } from './mapping.js';
 export type {
@@ -35,7 +34,7 @@ export {
 export type { RawIssue, JiraSnapshot, SnapshotIndex } from './snapshot.js';
 export { diffSnapshot, canApplyRestore, revertFields } from './restore.js';
 export type { FieldDiff, SnapshotDiff } from './restore.js';
-export { refreshTaches, nidOf } from './taches-sync.js';
+export { refreshTaches } from './taches-sync.js';
 export type { RefreshResult, RefreshStats } from './taches-sync.js';
 export {
   checkChanges,

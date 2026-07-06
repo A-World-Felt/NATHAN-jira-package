@@ -1,7 +1,7 @@
 export type StatusCategory = 'todo' | 'in_progress' | 'review' | 'blocked' | 'done' | 'cancelled';
 
 export interface Task {
-  id: string;                 // ex. "MIP-19" (= label nid-)
+  id: string;                 // identifiant de tâche (ex. "LIVS-42" — clé JIRA)
   jiraKey: string | null;     // ex. "NATHAN-123"
   title: string;
   role: string;               // ENG|AUD|ELEC|JEU|ÉQUIPE|INDIV|GESTION|TOUTES…
