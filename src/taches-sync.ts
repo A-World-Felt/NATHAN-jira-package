@@ -2,6 +2,7 @@
 // Use-case : régénérer/rafraîchir les données JIRA dans le markdown de TACHES.md.
 // Porté de gestion/src/taches-sync.ts. Aucun fs ni CLI ici.
 // La lecture de TACHES.md et l'écriture du fichier restent dans gestion.
+// Identité tâche <-> issue JIRA : la clé JIRA (colonne ID du plan == issue.key).
 
 import type { RawIssue } from './snapshot.js';
 import { deriveCategory } from './jira-conventions.js';
@@ -29,10 +30,8 @@ export interface RefreshResult {
 // Helpers internes
 // ---------------------------------------------------------------------------
 
-/** Identifiant fonctionnel d'une issue, tiré du label `nid-<ID>` (ou null). */
-export function nidOf(issue: Pick<RawIssue, 'labels'>): string | null {
-  return (issue.labels || []).find((l) => l.startsWith('nid-'))?.slice(4) ?? null;
-}
+/** Types d'issues JIRA pouvant apparaître comme ligne de tâche dans TACHES.md. */
+const PLAN_ISSUE_TYPES = new Set(['Tâche', 'Sous-tâche']);
 
 function cleanId(cell: string): string {
   return (cell || '').replace(/\*\*/g, '').replace(/~~/g, '').trim();
@@ -99,11 +98,8 @@ function taskHeaderIndices(cells: string[]): ColIndex | null {
 // ---------------------------------------------------------------------------
 
 export function refreshTaches(markdown: string, issues: RawIssue[]): RefreshResult {
-  const byNid = new Map<string, RawIssue>();
-  for (const i of issues) {
-    const n = nidOf(i);
-    if (n) byNid.set(n, i);
-  }
+  const byKey = new Map<string, RawIssue>();
+  for (const i of issues) byKey.set(i.key, i);
 
   const seen = new Set<string>();
   const planRowsUnmatched: string[] = [];
@@ -128,7 +124,7 @@ export function refreshTaches(markdown: string, issues: RawIssue[]): RefreshResu
 
     const id = cleanId(cells[cols.id]);
     if (!id) { out.push(line); continue; }
-    const issue = byNid.get(id);
+    const issue = byKey.get(id);
     if (!issue) { planRowsUnmatched.push(id); out.push(line); continue; }
     seen.add(id);
 
@@ -158,13 +154,16 @@ export function refreshTaches(markdown: string, issues: RawIssue[]): RefreshResu
     else out.push(line);
   }
 
-  const jiraNotInPlan = [...byNid.keys()].filter((n) => !seen.has(n)).sort();
+  const jiraNotInPlan = [...byKey.values()]
+    .filter((i) => PLAN_ISSUE_TYPES.has(i.issuetype) && !seen.has(i.key))
+    .map((i) => i.key)
+    .sort();
   const warnings: string[] = [];
   if (planRowsUnmatched.length) {
     warnings.push(`${planRowsUnmatched.length} ligne(s) du plan sans correspondance JIRA : ${planRowsUnmatched.join(', ')}`);
   }
   if (jiraNotInPlan.length) {
-    warnings.push(`${jiraNotInPlan.length} issue(s) JIRA (nid) absentes du plan : ${jiraNotInPlan.join(', ')}`);
+    warnings.push(`${jiraNotInPlan.length} issue(s) JIRA absentes du plan : ${jiraNotInPlan.join(', ')}`);
   }
   warnings.push(...columnMismatches);
 
