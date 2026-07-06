@@ -2,6 +2,7 @@
 // Use-case : appliquer des changements de tâches dans JIRA.
 // Porté de gestion/src/taches-apply.ts. Aucun fs, aucun CLI, aucun guard I/O ici.
 // La lecture des fichiers, les snapshots préventifs et la double garde restent dans gestion.
+// Identité tâche <-> issue JIRA : la clé JIRA (idV2 est un handle intra-changeset, pas une identité).
 
 import {
   createTask,
@@ -69,6 +70,10 @@ export interface ChangeSet {
 // Résolution & vérifications (PURE)
 // ---------------------------------------------------------------------------
 
+/**
+ * Résout une référence (`idV2` d'un `create` du même changeset, ou clé JIRA existante)
+ * vers une clé JIRA réelle. `created` = map idV2 -> clé, remplie au fil de `applyChanges`.
+ */
 function resolveRef(
   ref: string,
   existingKey: boolean | undefined,
@@ -76,7 +81,7 @@ function resolveRef(
   created: Map<string, string>,
 ): string | null {
   if (existingKey) return idx.keys.has(ref) ? ref : null;
-  return created.get(ref) ?? idx.nidToKey.get(ref) ?? (idx.keys.has(ref) ? ref : null);
+  return created.get(ref) ?? (idx.keys.has(ref) ? ref : null);
 }
 
 export interface ChangeCheck {
@@ -102,38 +107,36 @@ export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
   let subtaskCount = 0;
 
   for (const c of cs.create ?? []) {
-    if (idx.nidToKey.has(c.idV2)) warnings.push(`CREATE ${c.idV2} : un nid existe DÉJÀ (${idx.nidToKey.get(c.idV2)}) — risque de doublon !`);
     if (!idx.epics.has(c.epic)) warnings.push(`CREATE ${c.idV2} : epic ${c.epic} introuvable.`);
     lint(`CREATE ${c.idV2}`, c.nom);
     for (const s of c.subtasks ?? []) {
       subtaskCount++;
-      if (idx.nidToKey.has(s.idV2)) warnings.push(`CREATE ${c.idV2} / sous-tâche ${s.idV2} : un nid existe DÉJÀ (${idx.nidToKey.get(s.idV2)}) — risque de doublon !`);
       lint(`CREATE ${c.idV2} / sous-tâche ${s.idV2}`, s.nom);
     }
     for (const d of c.dependsOn ?? []) {
       linkCount++;
       const ok = d.existingKey
         ? idx.keys.has(d.ref)
-        : (willCreate.has(d.ref) || idx.nidToKey.has(d.ref) || idx.keys.has(d.ref));
+        : (willCreate.has(d.ref) || idx.keys.has(d.ref));
       if (!ok) warnings.push(`CREATE ${c.idV2} : prérequis ${d.ref} non résolu — lien ignoré.`);
     }
   }
   for (const u of cs.update ?? []) {
-    const key = idx.nidToKey.get(u.ref) ?? (idx.keys.has(u.ref) ? u.ref : null);
-    if (!key) warnings.push(`UPDATE ${u.ref} : issue introuvable (ni nid ni clé).`);
+    const key = idx.keys.has(u.ref) ? u.ref : null;
+    if (!key) warnings.push(`UPDATE ${u.ref} : issue introuvable (clé JIRA inconnue).`);
     if (u.epic && !idx.epics.has(u.epic)) warnings.push(`UPDATE ${u.ref} : epic cible ${u.epic} introuvable.`);
     lint(`UPDATE ${u.ref}`, u.summary);
     for (const d of u.dependsOn ?? []) {
       linkCount++;
       const ok = d.existingKey
         ? idx.keys.has(d.ref)
-        : (willCreate.has(d.ref) || idx.nidToKey.has(d.ref) || idx.keys.has(d.ref));
+        : (willCreate.has(d.ref) || idx.keys.has(d.ref));
       if (!ok) warnings.push(`UPDATE ${u.ref} : prérequis ${d.ref} non résolu — lien ignoré.`);
     }
   }
   for (const d of cs.delete ?? []) {
-    const key = idx.nidToKey.get(d.ref) ?? (idx.keys.has(d.ref) ? d.ref : null);
-    if (!key) warnings.push(`DELETE ${d.ref} : issue introuvable (ni nid ni clé) — ignorée.`);
+    const key = idx.keys.has(d.ref) ? d.ref : null;
+    if (!key) warnings.push(`DELETE ${d.ref} : issue introuvable (clé JIRA inconnue) — ignorée.`);
   }
   return {
     warnings, errors,
@@ -163,7 +166,6 @@ export function dryRun(cs: ChangeSet, idx: SnapshotIndex): string {
   if (cs.update?.length) {
     L.push('MISES À JOUR', '-'.repeat(40));
     for (const u of cs.update) {
-      const key = idx.nidToKey.get(u.ref) ?? u.ref;
       const parts = [
         u.statut ? `statut→"${u.statut}"` : '',
         u.debut ? `début→${u.debut}` : '',
@@ -172,7 +174,7 @@ export function dryRun(cs: ChangeSet, idx: SnapshotIndex): string {
         u.epic ? `epic→${u.epic}` : '',
         u.addLabels?.length ? `+labels[${u.addLabels.join(',')}]` : '',
       ].filter(Boolean);
-      L.push(`  ~ ${u.ref} (= ${key})  ${parts.join(' · ') || '(liens seulement)'}`);
+      L.push(`  ~ ${u.ref}  ${parts.join(' · ') || '(liens seulement)'}`);
       for (const d of u.dependsOn ?? []) L.push(`      dep ${d.type}: ${d.ref}`);
     }
     L.push('');
@@ -180,8 +182,7 @@ export function dryRun(cs: ChangeSet, idx: SnapshotIndex): string {
   if (cs.delete?.length) {
     L.push('SUPPRESSIONS (irréversible — cascade aux sous-tâches ; snapshot préventif avant apply)', '-'.repeat(40));
     for (const d of cs.delete) {
-      const key = idx.nidToKey.get(d.ref) ?? d.ref;
-      L.push(`  − ${d.ref} (= ${key})${d.raison ? '   « ' + d.raison + ' »' : ''}`);
+      L.push(`  − ${d.ref}${d.raison ? '   « ' + d.raison + ' »' : ''}`);
     }
     L.push('');
   }
@@ -254,7 +255,7 @@ export async function applyChanges(
       const key = await createTask(
         client, x.projet, x.nom, x.epic,
         x.debut ?? null, x.fin ?? null,
-        [`nid-${x.idV2}`, ...(x.labels ?? [])],
+        x.labels ?? [],
       );
       created.set(x.idV2, key);
       result.created.push({ idV2: x.idV2, key });
@@ -266,7 +267,7 @@ export async function applyChanges(
           const subKey = await createSubtask(client, x.projet, s.nom, key, {
             start: s.debut ?? null,
             due: s.fin ?? null,
-            labels: [`nid-${s.idV2}`, ...(s.labels ?? [])],
+            labels: s.labels ?? [],
           });
           result.subtasks.push({ idV2: s.idV2, key: subKey });
           log(`    [OK] sous-tâche ${s.idV2} → ${subKey} (parent ${key})`);
@@ -283,7 +284,7 @@ export async function applyChanges(
 
   // 2) Mises à jour
   for (const u of cs.update ?? []) {
-    const key = idx.nidToKey.get(u.ref) ?? (idx.keys.has(u.ref) ? u.ref : null);
+    const key = idx.keys.has(u.ref) ? u.ref : null;
     if (!key) { result.errors.push(`update ${u.ref}: introuvable`); continue; }
     try {
       let labels: string[] | undefined;
@@ -330,7 +331,7 @@ export async function applyChanges(
       log(`  [SKIP] ${cs.delete.length} suppression(s) ANNULÉE(S) : ${result.errors.length} erreur(s) avant la phase de suppression.`);
     } else {
       for (const d of cs.delete) {
-        const key = idx.nidToKey.get(d.ref) ?? (idx.keys.has(d.ref) ? d.ref : null);
+        const key = idx.keys.has(d.ref) ? d.ref : null;
         if (!key) {
           result.errors.push(`delete ${d.ref}: introuvable`);
           log(`  [SKIP] delete ${d.ref} introuvable`);
