@@ -2,8 +2,9 @@
 
 **Version courante : 1.0.0**
 
-Couche JIRA partagée des projets NATHAN : client REST, conventions (`nid-`, `role-`),
-types et mapping. Deux modes de consommation (voir plus bas) : **NATHAN-gestion** en git
+Couche JIRA partagée des projets NATHAN : client REST, conventions (`role-`),
+types et mapping. Identité tâche ↔ issue JIRA = la clé JIRA (plus de label `nid-`).
+Deux modes de consommation (voir plus bas) : **NATHAN-gestion** en git
 dependency (par SHA, sans token), **NATHAN-web** par le registre GitHub Packages (par SemVer).
 Repo : `A-World-Felt/NATHAN-jira-package` (privé). Package npm : `@a-world-felt/nathan-jira-core`.
 
