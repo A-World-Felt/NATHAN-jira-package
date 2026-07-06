@@ -201,7 +201,7 @@ describe('summarizeSnapshot', () => {
 });
 
 // ---------------------------------------------------------------------------
-// indexSnapshot
+// indexSnapshot — SANS nid (clé JIRA = identité)
 // ---------------------------------------------------------------------------
 
 function issRaw(p: Partial<RawIssue> & { key: string }): RawIssue {
@@ -214,33 +214,26 @@ function issRaw(p: Partial<RawIssue> & { key: string }): RawIssue {
 }
 
 describe('indexSnapshot', () => {
-  it('mappe nid-<ID> → clé, collecte clés et epics', () => {
+  it('collecte toutes les clés et les clés d\'Epic, sans nidToKey', () => {
     const idx = indexSnapshot([
       issRaw({ key: 'GES-66', issuetype: 'Epic' }),
       issRaw({ key: 'LIVS-75', issuetype: 'Epic', project: 'LIVS' }),
-      issRaw({ key: 'GES-80', labels: ['nid-SARIC-05'] }),
-      issRaw({ key: 'GES-90', labels: ['autre', 'nid-COM-02'] }),
+      issRaw({ key: 'GES-80' }),
+      issRaw({ key: 'GES-90', labels: ['autre'] }),
       issRaw({ key: 'GES-3' }),
     ]);
-    expect(idx.nidToKey.get('SARIC-05')).toBe('GES-80');
-    expect(idx.nidToKey.get('COM-02')).toBe('GES-90');
-    expect(idx.nidToKey.has('GES-3')).toBe(false);
+    expect('nidToKey' in idx).toBe(false);
     expect(idx.keys.has('GES-3')).toBe(true);
+    expect(idx.keys.has('GES-80')).toBe(true);
     expect(idx.keys.size).toBe(5);
     expect(idx.epics.has('GES-66')).toBe(true);
+    expect(idx.epics.has('LIVS-75')).toBe(true);
     expect(idx.epics.has('GES-80')).toBe(false);
     expect(idx.epics.size).toBe(2);
   });
 
-  it('ne prend que le premier label nid- d\'une issue', () => {
-    const idx = indexSnapshot([issRaw({ key: 'X-1', labels: ['nid-A', 'nid-B'] })]);
-    expect(idx.nidToKey.get('A')).toBe('X-1');
-    expect(idx.nidToKey.has('B')).toBe(false);
-  });
-
   it('gère un snapshot vide', () => {
     const idx = indexSnapshot([]);
-    expect(idx.nidToKey.size).toBe(0);
     expect(idx.keys.size).toBe(0);
     expect(idx.epics.size).toBe(0);
   });

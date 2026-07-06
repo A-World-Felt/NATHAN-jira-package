@@ -36,8 +36,6 @@ export interface JiraSnapshot {
 }
 
 export interface SnapshotIndex {
-  /** label `nid-<ID>` → clé JIRA réelle */
-  nidToKey: Map<string, string>;
   /** ensemble de toutes les clés présentes */
   keys: Set<string>;
   /** ensemble des clés d'Epic */
@@ -195,14 +193,11 @@ export function summarizeSnapshot(snap: JiraSnapshot): string {
 // ---------------------------------------------------------------------------
 
 export function indexSnapshot(issues: RawIssue[]): SnapshotIndex {
-  const nidToKey = new Map<string, string>();
   const keys = new Set<string>();
   const epics = new Set<string>();
   for (const i of issues) {
     keys.add(i.key);
     if (i.issuetype === 'Epic') epics.add(i.key);
-    const nid = (i.labels || []).find((l) => l.startsWith('nid-'))?.slice(4);
-    if (nid) nidToKey.set(nid, i.key);
   }
-  return { nidToKey, keys, epics };
+  return { keys, epics };
 }
