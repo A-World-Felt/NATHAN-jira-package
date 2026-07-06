@@ -1,6 +1,6 @@
 # @a-world-felt/nathan-jira-core
 
-**Version courante : 1.0.0**
+**Version courante : 1.1.0**
 
 Couche JIRA partagée des projets NATHAN : client REST, conventions (`role-`),
 types et mapping. Identité tâche ↔ issue JIRA = la clé JIRA (plus de label `nid-`).
