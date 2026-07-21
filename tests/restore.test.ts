@@ -157,4 +157,66 @@ describe('revertFields', () => {
     expect(result.succeeded).toHaveLength(0);
     expect(result.failed).toHaveLength(0);
   });
+
+  // -------------------------------------------------------------------------
+  // estimateHours — grammaire de durée JIRA (unités ENTIÈRES composées)
+  //
+  // Vérifié empiriquement sur l'instance réelle (écriture réversible sur
+  // DEV-200, état restauré) : "2h 30m" est ACCEPTÉ, "0.5h" est REFUSÉ avec
+  // HTTP 400 {"errors":{"timetracking_originalestimate":"Spécifiez une valeur
+  // valide pour l'estimation d'origine"}}. Le chemin de restauration doit donc
+  // produire exactement la même grammaire que le chemin d'écriture
+  // (hoursToJiraDuration), sinon le filet de sécurité casse précisément sur
+  // les tâches à estimation fractionnaire.
+  // -------------------------------------------------------------------------
+
+  it('estimation FRACTIONNAIRE → unités entières composées, jamais de décimale (0.5 → "30m")', async () => {
+    const bodies: any[] = [];
+    const client = makeClient(async (_url, init) => {
+      if (init?.body) bodies.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    });
+    const result = await revertFields(client, [
+      { key: 'PROJ-1', field: 'estimateHours', current: 2, snapshot: 0.5 },
+    ]);
+    expect(result.failed).toHaveLength(0);
+    expect(bodies[0].fields.timetracking).toEqual({ originalEstimate: '30m' });
+    expect(bodies[0].fields.timetracking.originalEstimate).not.toMatch(/\./);
+  });
+
+  it('estimation fractionnaire > 1 h → "10h 30m" (valeur réelle du change-file en attente)', async () => {
+    const bodies: any[] = [];
+    const client = makeClient(async (_url, init) => {
+      if (init?.body) bodies.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    });
+    await revertFields(client, [
+      { key: 'PROJ-1', field: 'estimateHours', current: null, snapshot: 10.5 },
+    ]);
+    expect(bodies[0].fields.timetracking).toEqual({ originalEstimate: '10h 30m' });
+  });
+
+  it('estimation ENTIÈRE → "3h" (non-régression du cas qui fonctionnait déjà)', async () => {
+    const bodies: any[] = [];
+    const client = makeClient(async (_url, init) => {
+      if (init?.body) bodies.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    });
+    await revertFields(client, [
+      { key: 'PROJ-1', field: 'estimateHours', current: 8, snapshot: 3 },
+    ]);
+    expect(bodies[0].fields.timetracking).toEqual({ originalEstimate: '3h' });
+  });
+
+  it('estimation snapshot null → efface l\'estimation (timetracking: {})', async () => {
+    const bodies: any[] = [];
+    const client = makeClient(async (_url, init) => {
+      if (init?.body) bodies.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    });
+    await revertFields(client, [
+      { key: 'PROJ-1', field: 'estimateHours', current: 3, snapshot: null },
+    ]);
+    expect(bodies[0].fields.timetracking).toEqual({});
+  });
 });

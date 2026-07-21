@@ -5,6 +5,7 @@
 
 import type { RawIssue } from './snapshot.js';
 import type { JiraHttpClient } from './types.js';
+import { hoursToJiraDuration } from './jira-write.js';
 
 // ---------------------------------------------------------------------------
 // Types publics
@@ -112,7 +113,13 @@ export async function revertFields(
               : null;
             break;
           case 'estimateHours':
-            updateBody.timetracking = diff.snapshot !== null ? { originalEstimate: `${diff.snapshot}h` } : {};
+            // Grammaire JIRA : unités ENTIÈRES composées ("10h 30m"). Un gabarit
+            // naïf `${x}h` produit "0.5h" pour toute valeur fractionnaire, que
+            // JIRA REFUSE (HTTP 400, vérifié sur l'instance réelle). On passe donc
+            // par le même convertisseur que le chemin d'écriture (jira-write).
+            updateBody.timetracking = diff.snapshot !== null
+              ? { originalEstimate: hoursToJiraDuration(diff.snapshot as number) }
+              : {};
             break;
           case 'start': break; // champ personnalisé — id inconnu à ce stade ; skip sûr
         }
