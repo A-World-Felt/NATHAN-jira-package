@@ -1,6 +1,6 @@
 # @a-world-felt/nathan-jira-core
 
-**Version courante : 1.1.0**
+**Version courante : 1.2.0**
 
 Couche JIRA partagée des projets NATHAN : client REST, conventions (`role-`),
 types et mapping. Identité tâche ↔ issue JIRA = la clé JIRA (plus de label `nid-`).
@@ -69,3 +69,14 @@ commiter de token.)
 7. Repointer les consommateurs : `NATHAN-gestion` met à jour le **SHA** de sa git-dep (mode A) ;
    `NATHAN-web` bump sa **plage SemVer** (mode B, ex. `^1.0.0` → `^1.1.0` ; souvent résolu
    automatiquement par `^` au prochain install).
+
+## Historique des versions
+
+- **1.2.0** (additif) : assignation (`assignee`, avec désassignation
+  explicite via `null`), estimation (`estimateHours`, time-tracking actif
+  sur l'instance depuis 2026-07-07 — format de durée entier composé, ex.
+  `"2h 30m"`, jamais de décimale), et sous-tâches sur `update` (création de
+  sous-tâches sous une tâche parente EXISTANTE). Nouvelles primitives :
+  `resolveAccountId`, `setAssignee`, `setEstimate`, `hoursToJiraDuration`.
+  Aucune API existante retirée ni signature existante cassée.
+- **1.1.0** : retrait du mécanisme `nid` (identité = clé JIRA seule).
