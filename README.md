@@ -79,4 +79,8 @@ commiter de token.)
   sous-tâches sous une tâche parente EXISTANTE). Nouvelles primitives :
   `resolveAccountId`, `setAssignee`, `setEstimate`, `hoursToJiraDuration`.
   Aucune API existante retirée ni signature existante cassée.
+  Corrige aussi `revertFields` (restauration), qui fabriquait sa durée à la
+  main (`"0.5h"`) et échouait donc en HTTP 400 sur toute estimation
+  fractionnaire : le chemin de restauration passe désormais par
+  `hoursToJiraDuration`, comme le chemin d'écriture.
 - **1.1.0** : retrait du mécanisme `nid` (identité = clé JIRA seule).
