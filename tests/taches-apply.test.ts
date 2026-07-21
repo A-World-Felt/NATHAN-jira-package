@@ -253,4 +253,53 @@ describe('applyChanges (client simulé)', () => {
     expect(calls.filter((c) => c === 'put')).toHaveLength(1);
     expect(createdLabels[0]).toEqual(['role-ENG']);
   });
+
+  it('résout le nom en accountId et pose assignee+estimation à la création', async () => {
+    const calls: Array<{ url: string; body: any }> = [];
+    let n = 400;
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.includes('/user/search')) {
+        return new Response(JSON.stringify([
+          { accountId: '712020:abc', displayName: 'Arthur-Olivier Fortin', accountType: 'atlassian', active: true },
+        ]), { status: 200 });
+      }
+      if (u.endsWith('/issue') && m === 'POST') {
+        const body = JSON.parse(opts.body);
+        calls.push({ url: u, body });
+        return new Response(JSON.stringify({ key: `GES-${n++}` }), { status: 201 });
+      }
+      if (u.includes('?fields=status')) return new Response(JSON.stringify({ fields: { status: { name: 'À faire' } } }), { status: 200 });
+      if (u.endsWith('/transitions') && m === 'GET') return new Response(JSON.stringify({ transitions: [] }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const cs: ChangeSet = {
+      create: [{
+        idV2: 'NEW-9', nom: 'X', projet: 'GES', epic: 'GES-66', statutInitial: 'À faire',
+        assignee: 'Arthur-Olivier Fortin', estimateHours: 3,
+      }],
+    };
+    const r = await applyChanges(client, cs, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(r.created).toHaveLength(1);
+    const f = calls[0].body.fields;
+    expect(f.assignee).toEqual({ accountId: '712020:abc' });
+    expect(f.timetracking).toEqual({ originalEstimate: '3h' });
+  });
+
+  it('erreur explicite (pas de silence) si le nom d\'assignee est introuvable — la création échoue', async () => {
+    const fetchFn = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/user/search')) return new Response(JSON.stringify([]), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const cs: ChangeSet = {
+      create: [{ idV2: 'NEW-10', nom: 'X', projet: 'GES', epic: 'GES-66', statutInitial: 'À faire', assignee: 'Personne Inconnue' }],
+    };
+    const r = await applyChanges(client, cs, idx, ISSUES);
+    expect(r.created).toHaveLength(0);
+    expect(r.errors.some((e) => e.includes('NEW-10') && e.includes('introuvable'))).toBe(true);
+  });
 });

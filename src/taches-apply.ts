@@ -10,6 +10,9 @@ import {
   transitionTo,
   linkDep,
   deleteIssue,
+  resolveAccountId,
+  setAssignee,
+  setEstimate,
   type JiraWriteClient,
   type DepType,
 } from './jira-write.js';
@@ -285,14 +288,19 @@ export async function applyChanges(
   const result: ApplyResult = { created: [], subtasks: [], updated: [], links: [], deleted: [], errors: [] };
   const created = new Map<string, string>();
   const byKey = new Map(issues.map((i) => [i.key, i]));
+  const assigneeCache = new Map<string, string>();
 
   // 1) Créations
   for (const x of cs.create ?? []) {
     try {
+      const accountId = x.assignee === undefined
+        ? undefined
+        : x.assignee === null ? null : await resolveAccountId(client, x.assignee, assigneeCache);
       const key = await createTask(
         client, x.projet, x.nom, x.epic,
         x.debut ?? null, x.fin ?? null,
         x.labels ?? [],
+        { accountId, estimateHours: x.estimateHours },
       );
       created.set(x.idV2, key);
       result.created.push({ idV2: x.idV2, key });
@@ -301,10 +309,15 @@ export async function applyChanges(
       catch (e) { result.errors.push(`transition ${x.idV2}: ${(e as Error).message}`); }
       for (const s of x.subtasks ?? []) {
         try {
+          const subAccountId = s.assignee === undefined
+            ? undefined
+            : s.assignee === null ? null : await resolveAccountId(client, s.assignee, assigneeCache);
           const subKey = await createSubtask(client, x.projet, s.nom, key, {
             start: s.debut ?? null,
             due: s.fin ?? null,
             labels: s.labels ?? [],
+            accountId: subAccountId,
+            estimateHours: s.estimateHours,
           });
           result.subtasks.push({ idV2: s.idV2, key: subKey });
           log(`    [OK] sous-tâche ${s.idV2} → ${subKey} (parent ${key})`);
