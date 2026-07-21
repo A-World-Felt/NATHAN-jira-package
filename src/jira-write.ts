@@ -47,6 +47,22 @@ export function isRealJiraKey(key: string): boolean {
   return /^[A-Z][A-Z0-9]+-\d+$/.test(key);
 }
 
+/**
+ * Convertit des heures (fractions de 0,5 h incluses) en chaîne de durée JIRA
+ * en UNITÉS ENTIÈRES composées (ex. "2h 30m"). JIRA rejette les décimales
+ * dans les champs de durée (`originalEstimate`) — voir docs/plans/
+ * 2026-07-21-assignee-estimate-subtasks-plan.md, Constat B. Jamais de "1.5h" :
+ * toujours "1h 30m".
+ */
+export function hoursToJiraDuration(hours: number): string {
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
 // ---------------------------------------------------------------------------
 // Primitives d'écriture bas-niveau
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isRealJiraKey,
+  hoursToJiraDuration,
   createEpic,
   createTask,
   transitionTo,
@@ -61,6 +62,30 @@ function makeFakeClient(
   };
   return { baseUrl: 'https://fake.atlassian.net', authHeader: 'Basic fake=', startFieldId, fetchFn, calls };
 }
+
+// ---------------------------------------------------------------------------
+// hoursToJiraDuration — conversion pure heures → durée JIRA (unités entières)
+// ---------------------------------------------------------------------------
+
+describe('hoursToJiraDuration', () => {
+  it('heure entière → "Xh"', () => {
+    expect(hoursToJiraDuration(3)).toBe('3h');
+  });
+  it('demi-heure seule → "30m" (jamais de décimale)', () => {
+    expect(hoursToJiraDuration(0.5)).toBe('30m');
+  });
+  it('heures + demi-heure composées → "Xh 30m"', () => {
+    expect(hoursToJiraDuration(2.5)).toBe('2h 30m');
+    expect(hoursToJiraDuration(10.5)).toBe('10h 30m');
+  });
+  it('quart d\'heure → minutes exactes', () => {
+    expect(hoursToJiraDuration(1.25)).toBe('1h 15m');
+  });
+  it('ne produit jamais de point décimal dans la sortie', () => {
+    expect(hoursToJiraDuration(0.5)).not.toMatch(/\./);
+    expect(hoursToJiraDuration(10.5)).not.toMatch(/\./);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // isRealJiraKey
