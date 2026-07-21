@@ -147,7 +147,8 @@ export async function createEpic(
 
 /**
  * Crée une Tâche rattachée à un Epic (board team-managed → champ `parent`).
- * POST /rest/api/3/issue  (issuetype Task, parent=epicKey, duedate, start-date, labels).
+ * POST /rest/api/3/issue  (issuetype Task, parent=epicKey, duedate, start-date,
+ * labels, et optionnellement assignee/estimation via `opts`).
  * Renvoie la clé de la tâche créée.
  */
 export async function createTask(
@@ -158,6 +159,7 @@ export async function createTask(
   start: string | null,
   due: string | null,
   labels: string[],
+  opts: { accountId?: string | null; estimateHours?: number | null } = {},
 ): Promise<string> {
   const fields: Record<string, unknown> = {
     project: { key: project },
@@ -168,7 +170,8 @@ export async function createTask(
   if (due) fields.duedate = due;
   if (start && client.startFieldId) fields[client.startFieldId] = start;
   if (labels.length > 0) fields.labels = labels;
-  // NOTE : pas de timetracking à la création (time-tracking désactivé → HTTP 400).
+  if (opts.accountId !== undefined) fields.assignee = opts.accountId ? { accountId: opts.accountId } : null;
+  if (opts.estimateHours != null) fields.timetracking = { originalEstimate: hoursToJiraDuration(opts.estimateHours) };
 
   const res = await client.fetchFn(`${client.baseUrl}/rest/api/3/issue`, {
     method: 'POST',
@@ -185,7 +188,8 @@ export async function createTask(
 
 /**
  * Crée une Sous-tâche rattachée à une Tâche parente.
- * POST /rest/api/3/issue  (issuetype Sous-tâche, parent=parentKey).
+ * POST /rest/api/3/issue  (issuetype Sous-tâche, parent=parentKey, et
+ * optionnellement assignee/estimation via `fields.accountId`/`estimateHours`).
  * Renvoie la clé de la sous-tâche créée.
  */
 export async function createSubtask(
@@ -193,7 +197,13 @@ export async function createSubtask(
   project: string,
   summary: string,
   parentKey: string,
-  fields: { start?: string | null; due?: string | null; labels?: string[] },
+  fields: {
+    start?: string | null;
+    due?: string | null;
+    labels?: string[];
+    accountId?: string | null;
+    estimateHours?: number | null;
+  },
 ): Promise<string> {
   const f: Record<string, unknown> = {
     project: { key: project },
@@ -204,6 +214,8 @@ export async function createSubtask(
   if (fields.due) f.duedate = fields.due;
   if (fields.start && client.startFieldId) f[client.startFieldId] = fields.start;
   if (fields.labels?.length) f.labels = fields.labels;
+  if (fields.accountId !== undefined) f.assignee = fields.accountId ? { accountId: fields.accountId } : null;
+  if (fields.estimateHours != null) f.timetracking = { originalEstimate: hoursToJiraDuration(fields.estimateHours) };
 
   const res = await client.fetchFn(`${client.baseUrl}/rest/api/3/issue`, {
     method: 'POST',

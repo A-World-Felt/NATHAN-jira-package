@@ -158,12 +158,33 @@ describe('createTask', () => {
     expect(f.customfield_10015).toBeUndefined();
   });
 
-  it('ne pose JAMAIS timetracking (time-tracking off)', async () => {
+  it('ne pose PAS timetracking quand aucune estimation n\'est fournie (opts omis)', async () => {
     const client = makeFakeClient([
       { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-202' } },
     ]);
     await createTask(client, 'LIVS', 'X', 'LIVS-100', null, null, []);
     expect(client.calls[0].body.fields.timetracking).toBeUndefined();
+    expect(client.calls[0].body.fields.assignee).toBeUndefined();
+  });
+
+  it('pose timetracking (unités entières) et assignee.accountId quand opts fournis', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-203' } },
+    ]);
+    await createTask(client, 'LIVS', 'X', 'LIVS-100', null, null, [], {
+      accountId: '712020:abc', estimateHours: 2.5,
+    });
+    const f = client.calls[0].body.fields;
+    expect(f.timetracking).toEqual({ originalEstimate: '2h 30m' });
+    expect(f.assignee).toEqual({ accountId: '712020:abc' });
+  });
+
+  it('opts.accountId === null pose fields.assignee = null (désassignation explicite à la création)', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: 'rest/api/3/issue', status: 201, body: { key: 'LIVS-204' } },
+    ]);
+    await createTask(client, 'LIVS', 'X', 'LIVS-100', null, null, [], { accountId: null });
+    expect(client.calls[0].body.fields.assignee).toBeNull();
   });
 
   it('lève sur HTTP 400', async () => {
@@ -384,6 +405,18 @@ describe('createSubtask', () => {
     expect(call.body.fields.issuetype.name).toBe('Sous-tâche');
     expect(call.body.fields.parent.key).toBe('GES-10');
     expect(call.body.fields.labels).toContain('nid-SEC-s8-1');
+  });
+
+  it('accepte assignee et estimateHours dans le paramètre fields', async () => {
+    const client = makeFakeClient([
+      { method: 'POST', urlPart: '/issue', status: 201, body: { key: 'GES-43' } },
+    ]);
+    await createSubtask(client, 'GES', 'Revue de PR', 'GES-10', {
+      accountId: '712020:abc', estimateHours: 1,
+    });
+    const f = client.calls[0].body.fields;
+    expect(f.timetracking).toEqual({ originalEstimate: '1h' });
+    expect(f.assignee).toEqual({ accountId: '712020:abc' });
   });
 
   it('throws on HTTP 400', async () => {
