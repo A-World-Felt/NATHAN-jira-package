@@ -79,6 +79,25 @@ describe('checkChanges', () => {
     expect(c.errors).toEqual([]);
     expect(c.subtaskCount).toBe(1);
   });
+
+  it('compte assigneeCount/estimateCount sur create, update et sous-tâches', () => {
+    const cs: ChangeSet = {
+      create: [{
+        idV2: 'NEW-8', nom: 'X', projet: 'GES', epic: 'GES-66', statutInitial: 'À faire',
+        assignee: 'Arthur-Olivier Fortin', estimateHours: 3,
+        subtasks: [{ idV2: 'NEW-8-1', nom: 'Sub', assignee: null }],
+      }],
+      update: [
+        { ref: 'GES-90', assignee: null },
+        { ref: 'GES-80', estimateHours: 2.5 },
+      ],
+    };
+    const c = checkChanges(cs, idx);
+    // assignee : NEW-8 (défini) + NEW-8-1 (défini, null) + GES-90 (défini, null) = 3
+    expect(c.assigneeCount).toBe(3);
+    // estimateHours : NEW-8 (défini) + GES-80 (défini) = 2
+    expect(c.estimateCount).toBe(2);
+  });
 });
 
 describe('dryRun', () => {
@@ -94,6 +113,22 @@ describe('dryRun', () => {
     expect(out).toContain('GES-90');
     expect(out).toContain('statut→"En cours"');
     expect(out).not.toContain('nid');
+  });
+
+  it('affiche assignations, estimations et sous-tâches créées via update', () => {
+    const cs: ChangeSet = {
+      update: [{
+        ref: 'GES-90', assignee: null, estimateHours: 2.5,
+        subtasks: [{ idV2: 'SUB-2', nom: 'Revue de PR', assignee: null, estimateHours: 1 }],
+      }],
+    };
+    const out = dryRun(cs, idx);
+    expect(out).toContain('Assignations');
+    expect(out).toContain('Estimations');
+    expect(out).toContain('(désassigné)');
+    expect(out).toContain('estimation→2.5h');
+    expect(out).toContain('SUB-2');
+    expect(out).toContain('Revue de PR');
   });
 });
 

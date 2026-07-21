@@ -99,6 +99,8 @@ export interface ChangeCheck {
   linkCount: number;
   subtaskCount: number;
   deleteCount: number;
+  assigneeCount: number;
+  estimateCount: number;
 }
 
 export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
@@ -112,13 +114,21 @@ export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
   const willCreate = new Set((cs.create ?? []).map((c) => c.idV2));
   let linkCount = 0;
   let subtaskCount = 0;
+  let assigneeCount = 0;
+  let estimateCount = 0;
+  const countAE = (item: { assignee?: string | null; estimateHours?: number | null }): void => {
+    if (item.assignee !== undefined) assigneeCount++;
+    if (item.estimateHours !== undefined) estimateCount++;
+  };
 
   for (const c of cs.create ?? []) {
     if (!idx.epics.has(c.epic)) warnings.push(`CREATE ${c.idV2} : epic ${c.epic} introuvable.`);
     lint(`CREATE ${c.idV2}`, c.nom);
+    countAE(c);
     for (const s of c.subtasks ?? []) {
       subtaskCount++;
       lint(`CREATE ${c.idV2} / sous-tâche ${s.idV2}`, s.nom);
+      countAE(s);
     }
     for (const d of c.dependsOn ?? []) {
       linkCount++;
@@ -133,9 +143,11 @@ export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
     if (!key) warnings.push(`UPDATE ${u.ref} : issue introuvable (clé JIRA inconnue).`);
     if (u.epic && !idx.epics.has(u.epic)) warnings.push(`UPDATE ${u.ref} : epic cible ${u.epic} introuvable.`);
     lint(`UPDATE ${u.ref}`, u.summary);
+    countAE(u);
     for (const s of u.subtasks ?? []) {
       subtaskCount++;
       lint(`UPDATE ${u.ref} / sous-tâche ${s.idV2}`, s.nom);
+      countAE(s);
     }
     for (const d of u.dependsOn ?? []) {
       linkCount++;
@@ -155,6 +167,7 @@ export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
     updateCount: (cs.update ?? []).length,
     linkCount, subtaskCount,
     deleteCount: (cs.delete ?? []).length,
+    assigneeCount, estimateCount,
   };
 }
 
@@ -163,14 +176,20 @@ export function dryRun(cs: ChangeSet, idx: SnapshotIndex): string {
   const L: string[] = [];
   const bar = '='.repeat(72);
   L.push(bar, 'DRY-RUN — Changements de tâches JIRA (AUCUNE écriture)', bar, '');
-  L.push(`  Créations : ${c.createCount}   ·   Sous-tâches : ${c.subtaskCount}   ·   Mises à jour : ${c.updateCount}   ·   Liens : ${c.linkCount}   ·   Suppressions : ${c.deleteCount}`, '');
+  L.push(`  Créations : ${c.createCount}   ·   Sous-tâches : ${c.subtaskCount}   ·   Mises à jour : ${c.updateCount}   ·   Assignations : ${c.assigneeCount}   ·   Estimations : ${c.estimateCount}   ·   Liens : ${c.linkCount}   ·   Suppressions : ${c.deleteCount}`, '');
   if (cs.create?.length) {
     L.push('CRÉATIONS', '-'.repeat(40));
     for (const x of cs.create) {
       L.push(`  + [${x.projet}] ${x.idV2} → epic ${x.epic}  (${x.statutInitial})`);
       L.push(`      "${x.nom}"   ${x.debut ?? '—'} → ${x.fin ?? '—'}`);
+      if (x.assignee !== undefined) L.push(`      assignee → ${x.assignee ?? '(désassigné)'}`);
+      if (x.estimateHours !== undefined) L.push(`      estimation → ${x.estimateHours ?? '(effacée)'}h`);
       for (const d of x.dependsOn ?? []) L.push(`      dep ${d.type}: ${d.ref}`);
-      for (const s of x.subtasks ?? []) L.push(`      ↳ ${s.idV2}  "${s.nom}"   ${s.debut ?? '—'} → ${s.fin ?? '—'}`);
+      for (const s of x.subtasks ?? []) {
+        L.push(`      ↳ ${s.idV2}  "${s.nom}"   ${s.debut ?? '—'} → ${s.fin ?? '—'}`);
+        if (s.assignee !== undefined) L.push(`          assignee → ${s.assignee ?? '(désassigné)'}`);
+        if (s.estimateHours !== undefined) L.push(`          estimation → ${s.estimateHours ?? '(effacée)'}h`);
+      }
     }
     L.push('');
   }
@@ -184,9 +203,16 @@ export function dryRun(cs: ChangeSet, idx: SnapshotIndex): string {
         u.summary ? 'summary' : '',
         u.epic ? `epic→${u.epic}` : '',
         u.addLabels?.length ? `+labels[${u.addLabels.join(',')}]` : '',
+        u.assignee !== undefined ? `assignee→${u.assignee ?? '(désassigné)'}` : '',
+        u.estimateHours !== undefined ? `estimation→${u.estimateHours ?? '(effacée)'}h` : '',
       ].filter(Boolean);
       L.push(`  ~ ${u.ref}  ${parts.join(' · ') || '(liens seulement)'}`);
       for (const d of u.dependsOn ?? []) L.push(`      dep ${d.type}: ${d.ref}`);
+      for (const s of u.subtasks ?? []) {
+        L.push(`      ↳ NOUVELLE sous-tâche ${s.idV2}  "${s.nom}"   ${s.debut ?? '—'} → ${s.fin ?? '—'}`);
+        if (s.assignee !== undefined) L.push(`          assignee → ${s.assignee ?? '(désassigné)'}`);
+        if (s.estimateHours !== undefined) L.push(`          estimation → ${s.estimateHours ?? '(effacée)'}h`);
+      }
     }
     L.push('');
   }
