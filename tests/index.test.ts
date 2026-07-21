@@ -16,4 +16,11 @@ describe('barrel index.ts — sans mécanisme nid', () => {
   it('n\'exporte plus nidOf', () => {
     expect('nidOf' in core).toBe(false);
   });
+
+  it('exporte les nouvelles primitives assignee/estimation', () => {
+    expect(typeof core.hoursToJiraDuration).toBe('function');
+    expect(typeof core.resolveAccountId).toBe('function');
+    expect(typeof core.setAssignee).toBe('function');
+    expect(typeof core.setEstimate).toBe('function');
+  });
 });
