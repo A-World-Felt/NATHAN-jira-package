@@ -63,6 +63,55 @@ export function hoursToJiraDuration(hours: number): string {
   return `${m}m`;
 }
 
+interface JiraUserSearchResult {
+  accountId: string;
+  displayName: string;
+  accountType: string;
+  active: boolean;
+}
+
+/**
+ * Résout un nom d'affichage JIRA vers son `accountId` (API v3 attend un
+ * accountId, pas un displayName — voir docs/plans/
+ * 2026-07-21-assignee-estimate-subtasks-plan.md, Constat C).
+ * GET /rest/api/3/user/search?query=<nom>, filtré aux comptes humains actifs
+ * dont le displayName correspond exactement (insensible à la casse).
+ * `cache` évite un appel réseau par occurrence du même nom dans un changeset.
+ * Lève une erreur explicite si 0 correspondance ou plusieurs (jamais de
+ * résolution silencieuse au premier résultat).
+ */
+export async function resolveAccountId(
+  client: JiraWriteClient,
+  displayName: string,
+  cache: Map<string, string> = new Map(),
+): Promise<string> {
+  const cached = cache.get(displayName);
+  if (cached) return cached;
+
+  const res = await client.fetchFn(
+    `${client.baseUrl}/rest/api/3/user/search?query=${encodeURIComponent(displayName)}`,
+    { headers: buildHeaders(client) },
+  );
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    throw new Error(`resolveAccountId("${displayName}") HTTP ${res.status}: ${text}`);
+  }
+  const users: JiraUserSearchResult[] = await res.json();
+  const matches = users.filter(
+    (u) => u.accountType === 'atlassian' && u.active && norm(u.displayName) === norm(displayName),
+  );
+  if (matches.length === 0) {
+    throw new Error(`resolveAccountId("${displayName}") : introuvable — aucun compte JIRA actif avec ce nom exact.`);
+  }
+  if (matches.length > 1) {
+    const ids = matches.map((m) => m.accountId).join(', ');
+    throw new Error(`resolveAccountId("${displayName}") : ambigu — ${matches.length} correspondances (${ids}).`);
+  }
+  const accountId = matches[0].accountId;
+  cache.set(displayName, accountId);
+  return accountId;
+}
+
 // ---------------------------------------------------------------------------
 // Primitives d'écriture bas-niveau
 // ---------------------------------------------------------------------------

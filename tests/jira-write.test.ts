@@ -395,3 +395,73 @@ describe('createSubtask', () => {
     ).rejects.toThrow('HTTP 400');
   });
 });
+
+// ---------------------------------------------------------------------------
+// resolveAccountId — nom d'affichage → accountId (cache + erreurs explicites)
+// ---------------------------------------------------------------------------
+
+import { resolveAccountId } from '../src/jira-write.js';
+
+function makeUserSearchClient(
+  responses: Record<string, Array<{ accountId: string; displayName: string; accountType: string; active: boolean }>>,
+): JiraWriteClient & { calls: string[] } {
+  const calls: string[] = [];
+  const fetchFn: typeof fetch = async (input) => {
+    const url = input.toString();
+    calls.push(url);
+    const q = new URL(url).searchParams.get('query') ?? '';
+    const body = responses[q] ?? [];
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+  return { baseUrl: 'https://fake.atlassian.net', authHeader: 'Basic fake=', startFieldId: null, fetchFn, calls };
+}
+
+describe('resolveAccountId', () => {
+  it('renvoie l\'accountId sur correspondance unique', async () => {
+    const client = makeUserSearchClient({
+      'Arthur-Olivier Fortin': [
+        { accountId: '712020:abc', displayName: 'Arthur-Olivier Fortin', accountType: 'atlassian', active: true },
+      ],
+    });
+    const id = await resolveAccountId(client, 'Arthur-Olivier Fortin');
+    expect(id).toBe('712020:abc');
+  });
+
+  it('exclut les comptes non-humains (accountType app/bot)', async () => {
+    const client = makeUserSearchClient({
+      'Mathieu Nicol': [
+        { accountId: 'app-1', displayName: 'Mathieu Nicol Bot', accountType: 'app', active: true },
+        { accountId: '712020:xyz', displayName: 'Mathieu Nicol', accountType: 'atlassian', active: true },
+      ],
+    });
+    const id = await resolveAccountId(client, 'Mathieu Nicol');
+    expect(id).toBe('712020:xyz');
+  });
+
+  it('lève une erreur explicite si 0 correspondance (introuvable)', async () => {
+    const client = makeUserSearchClient({ 'Nom Inconnu': [] });
+    await expect(resolveAccountId(client, 'Nom Inconnu')).rejects.toThrow(/introuvable/);
+  });
+
+  it('lève une erreur explicite si plusieurs correspondances (ambigu)', async () => {
+    const client = makeUserSearchClient({
+      'Alex Roy': [
+        { accountId: 'a1', displayName: 'Alex Roy', accountType: 'atlassian', active: true },
+        { accountId: 'a2', displayName: 'Alex Roy', accountType: 'atlassian', active: true },
+      ],
+    });
+    await expect(resolveAccountId(client, 'Alex Roy')).rejects.toThrow(/ambigu/);
+  });
+
+  it('met en cache : un seul appel réseau pour deux résolutions du même nom', async () => {
+    const client = makeUserSearchClient({
+      'Arthur-Olivier Fortin': [
+        { accountId: '712020:abc', displayName: 'Arthur-Olivier Fortin', accountType: 'atlassian', active: true },
+      ],
+    });
+    const cache = new Map<string, string>();
+    await resolveAccountId(client, 'Arthur-Olivier Fortin', cache);
+    await resolveAccountId(client, 'Arthur-Olivier Fortin', cache);
+    expect(client.calls).toHaveLength(1);
+  });
+});
