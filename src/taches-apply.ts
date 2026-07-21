@@ -28,6 +28,8 @@ export interface SubtaskChange {
   debut?: string | null;
   fin?: string | null;
   labels?: string[];
+  assignee?: string | null;
+  estimateHours?: number | null;
 }
 
 export interface CreateChange {
@@ -41,6 +43,8 @@ export interface CreateChange {
   labels?: string[];
   dependsOn?: ChangeDep[];
   subtasks?: SubtaskChange[];
+  assignee?: string | null;
+  estimateHours?: number | null;
 }
 
 export interface UpdateChange {
@@ -52,6 +56,9 @@ export interface UpdateChange {
   epic?: string;
   addLabels?: string[];
   dependsOn?: ChangeDep[];
+  assignee?: string | null;
+  estimateHours?: number | null;
+  subtasks?: SubtaskChange[];
 }
 
 export interface DeleteChange {
@@ -126,6 +133,10 @@ export function checkChanges(cs: ChangeSet, idx: SnapshotIndex): ChangeCheck {
     if (!key) warnings.push(`UPDATE ${u.ref} : issue introuvable (clé JIRA inconnue).`);
     if (u.epic && !idx.epics.has(u.epic)) warnings.push(`UPDATE ${u.ref} : epic cible ${u.epic} introuvable.`);
     lint(`UPDATE ${u.ref}`, u.summary);
+    for (const s of u.subtasks ?? []) {
+      subtaskCount++;
+      lint(`UPDATE ${u.ref} / sous-tâche ${s.idV2}`, s.nom);
+    }
     for (const d of u.dependsOn ?? []) {
       linkCount++;
       const ok = d.existingKey

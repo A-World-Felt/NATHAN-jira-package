@@ -61,6 +61,24 @@ describe('checkChanges', () => {
     expect(c.errors.length).toBeGreaterThan(0);
     expect(c.errors[0]).toContain('résumé non conforme');
   });
+
+  it('accepte assignee/estimateHours sur create et update, et subtasks sur update (typage)', () => {
+    const cs: ChangeSet = {
+      create: [{
+        idV2: 'NEW-7', nom: 'X', projet: 'GES', epic: 'GES-66', statutInitial: 'À faire',
+        assignee: 'Arthur-Olivier Fortin', estimateHours: 3,
+      }],
+      update: [{
+        ref: 'GES-90', assignee: null, estimateHours: 2.5,
+        subtasks: [{ idV2: 'SUB-1', nom: 'Revue', assignee: null, estimateHours: 1 }],
+      }],
+    };
+    // Ce test échoue à la COMPILATION tant que les types ne portent pas ces champs
+    // (tsc --noEmit) ; à l'exécution, on vérifie que le comptage les voit.
+    const c = checkChanges(cs, idx);
+    expect(c.errors).toEqual([]);
+    expect(c.subtaskCount).toBe(1);
+  });
 });
 
 describe('dryRun', () => {
