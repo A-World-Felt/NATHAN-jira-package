@@ -175,6 +175,51 @@ describe('sous-tâches', () => {
     expect(subs[0].parent).toBe('GES-300');
     expect(subs[0].labels ?? []).not.toContain(expect.stringMatching(/^nid-/));
   });
+
+  it('applyChanges crée des sous-tâches via update SOUS UN PARENT EXISTANT (pas de created.get)', async () => {
+    const createdSubtasks: Array<{ parent?: string; summary?: string }> = [];
+    let n = 500;
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.endsWith('/issue') && m === 'POST') {
+        const body = JSON.parse(opts.body);
+        createdSubtasks.push({ parent: body.fields?.parent?.key, summary: body.fields?.summary });
+        return new Response(JSON.stringify({ key: `GES-${n++}` }), { status: 201 });
+      }
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') return new Response(null, { status: 204 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const cs: ChangeSet = {
+      update: [{
+        ref: 'GES-90', summary: 'PRx — décomposée en sous-tâches',
+        subtasks: [
+          { idV2: 'PRX-CONC', nom: 'Conception', estimateHours: 2 },
+          { idV2: 'PRX-IMPL', nom: 'Implémentation', estimateHours: 5 },
+        ],
+      }],
+    };
+    const r = await applyChanges(client, cs, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(r.subtasks).toHaveLength(2);
+    expect(r.subtasks.map((s) => s.idV2)).toEqual(['PRX-CONC', 'PRX-IMPL']);
+    expect(createdSubtasks.every((s) => s.parent === 'GES-90')).toBe(true);
+    expect(createdSubtasks.map((s) => s.summary)).toEqual(['Conception', 'Implémentation']);
+  });
+
+  it('n\'essaie pas de créer les sous-tâches d\'update si le ref parent est introuvable', async () => {
+    const calls: string[] = [];
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.endsWith('/issue') && m === 'POST') { calls.push('create'); return new Response(JSON.stringify({ key: 'X-1' }), { status: 201 }); }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const cs: ChangeSet = { update: [{ ref: 'GES-INCONNU', subtasks: [{ idV2: 'S-1', nom: 'X' }] }] };
+    const r = await applyChanges(client, cs, idx, ISSUES);
+    expect(r.errors.some((e) => e.includes('GES-INCONNU'))).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('suppressions', () => {

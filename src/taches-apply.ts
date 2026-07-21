@@ -366,6 +366,26 @@ export async function applyChanges(
           log(`  [ERREUR] estimate ${u.ref}: ${(e as Error).message}`);
         }
       }
+      const parentProject = byKey.get(key)?.project ?? key.split('-')[0];
+      for (const s of u.subtasks ?? []) {
+        try {
+          const subAccountId = s.assignee === undefined
+            ? undefined
+            : s.assignee === null ? null : await resolveAccountId(client, s.assignee, assigneeCache);
+          const subKey = await createSubtask(client, parentProject, s.nom, key, {
+            start: s.debut ?? null,
+            due: s.fin ?? null,
+            labels: s.labels ?? [],
+            accountId: subAccountId,
+            estimateHours: s.estimateHours,
+          });
+          result.subtasks.push({ idV2: s.idV2, key: subKey });
+          log(`    [OK] sous-tâche ${s.idV2} → ${subKey} (parent existant ${key})`);
+        } catch (e) {
+          result.errors.push(`subtask ${s.idV2}: ${(e as Error).message}`);
+          log(`    [ERREUR] subtask ${s.idV2}: ${(e as Error).message}`);
+        }
+      }
       result.updated.push(key);
       log(`  [OK] maj ${u.ref} (${key})`);
     } catch (e) {
