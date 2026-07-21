@@ -465,3 +465,74 @@ describe('resolveAccountId', () => {
     expect(client.calls).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// setAssignee — PUT assignee (accountId ou null pour désassigner)
+// ---------------------------------------------------------------------------
+
+import { setAssignee, setEstimate } from '../src/jira-write.js';
+
+describe('setAssignee', () => {
+  it('PUT fields.assignee.accountId quand accountId fourni', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-191', status: 204, body: '' },
+    ]);
+    await setAssignee(client, 'DEV-191', '712020:abc');
+    const f = client.calls[0].body.fields;
+    expect(f.assignee).toEqual({ accountId: '712020:abc' });
+  });
+
+  it('PUT fields.assignee = null quand accountId === null (désassigne)', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-197', status: 204, body: '' },
+    ]);
+    await setAssignee(client, 'DEV-197', null);
+    const f = client.calls[0].body.fields;
+    expect(f.assignee).toBeNull();
+  });
+
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-1', status: 400, body: { errorMessages: ['bad'] } },
+    ]);
+    await expect(setAssignee(client, 'DEV-1', '712020:abc')).rejects.toThrow(/400/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setEstimate — PUT timetracking.originalEstimate (unités entières)
+// ---------------------------------------------------------------------------
+
+describe('setEstimate', () => {
+  it('PUT timetracking.originalEstimate au format entier composé', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-195', status: 204, body: '' },
+    ]);
+    await setEstimate(client, 'DEV-195', 10.5);
+    const f = client.calls[0].body.fields;
+    expect(f.timetracking).toEqual({ originalEstimate: '10h 30m' });
+  });
+
+  it('demi-heure seule → "30m"', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-196', status: 204, body: '' },
+    ]);
+    await setEstimate(client, 'DEV-196', 0.5);
+    expect(client.calls[0].body.fields.timetracking).toEqual({ originalEstimate: '30m' });
+  });
+
+  it('hours === null → efface l\'estimation (timetracking: {})', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-1', status: 204, body: '' },
+    ]);
+    await setEstimate(client, 'DEV-1', null);
+    expect(client.calls[0].body.fields.timetracking).toEqual({});
+  });
+
+  it('lève sur HTTP 400', async () => {
+    const client = makeFakeClient([
+      { method: 'PUT', urlPart: 'rest/api/3/issue/DEV-1', status: 400, body: { errorMessages: ['bad'] } },
+    ]);
+    await expect(setEstimate(client, 'DEV-1', 3)).rejects.toThrow(/400/);
+  });
+});

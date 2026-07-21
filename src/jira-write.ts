@@ -350,6 +350,52 @@ export async function restructureOriginal(
 }
 
 /**
+ * Assigne une issue existante à `accountId`, ou la DÉSASSIGNE si
+ * `accountId === null`. Ne PAS confondre avec "ne pas toucher" : ce cas
+ * n'existe pas ici — l'appelant ne doit appeler setAssignee que quand un
+ * changement est explicitement demandé (voir applyChanges).
+ * PUT /rest/api/3/issue/{key}  { fields: { assignee: { accountId } | null } }.
+ */
+export async function setAssignee(
+  client: JiraWriteClient,
+  key: string,
+  accountId: string | null,
+): Promise<void> {
+  const res = await client.fetchFn(`${client.baseUrl}/rest/api/3/issue/${key}`, {
+    method: 'PUT',
+    headers: buildHeaders(client),
+    body: JSON.stringify({ fields: { assignee: accountId ? { accountId } : null } }),
+  });
+  if (!res.ok && res.status !== 204) {
+    const text = (await res.text()).slice(0, 300);
+    throw new Error(`setAssignee(${key}) HTTP ${res.status}: ${text}`);
+  }
+}
+
+/**
+ * Pose l'estimation originale d'une issue existante. `hours === null` efface
+ * l'estimation (`timetracking: {}`). `hours` est converti en unités entières
+ * via hoursToJiraDuration — JAMAIS de décimale envoyée à JIRA.
+ * PUT /rest/api/3/issue/{key}  { fields: { timetracking: {...} } }.
+ */
+export async function setEstimate(
+  client: JiraWriteClient,
+  key: string,
+  hours: number | null,
+): Promise<void> {
+  const timetracking = hours === null ? {} : { originalEstimate: hoursToJiraDuration(hours) };
+  const res = await client.fetchFn(`${client.baseUrl}/rest/api/3/issue/${key}`, {
+    method: 'PUT',
+    headers: buildHeaders(client),
+    body: JSON.stringify({ fields: { timetracking } }),
+  });
+  if (!res.ok && res.status !== 204) {
+    const text = (await res.text()).slice(0, 300);
+    throw new Error(`setEstimate(${key}) HTTP ${res.status}: ${text}`);
+  }
+}
+
+/**
  * Supprime une issue.
  * DELETE /rest/api/3/issue/{key}?deleteSubtasks=true.
  */
