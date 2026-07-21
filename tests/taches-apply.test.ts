@@ -303,3 +303,78 @@ describe('applyChanges (client simulé)', () => {
     expect(r.errors.some((e) => e.includes('NEW-10') && e.includes('introuvable'))).toBe(true);
   });
 });
+
+describe('applyChanges — assignee/estimation sur update', () => {
+  it('désassigne (assignee: null) via setAssignee, sans appel à /user/search', async () => {
+    const searchCalls: string[] = [];
+    const putBodies: any[] = [];
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.includes('/user/search')) { searchCalls.push(u); return new Response('[]', { status: 200 }); }
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') { putBodies.push(JSON.parse(opts.body)); return new Response(null, { status: 204 }); }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const r = await applyChanges(client, { update: [{ ref: 'GES-90', assignee: null }] }, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(searchCalls).toHaveLength(0);
+    expect(putBodies.some((b) => b.fields.assignee === null)).toBe(true);
+  });
+
+  it('résout le nom et assigne via setAssignee (PUT séparé, après updateFields)', async () => {
+    const putBodies: any[] = [];
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.includes('/user/search')) {
+        return new Response(JSON.stringify([
+          { accountId: '712020:abc', displayName: 'Arthur-Olivier Fortin', accountType: 'atlassian', active: true },
+        ]), { status: 200 });
+      }
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') { putBodies.push(JSON.parse(opts.body)); return new Response(null, { status: 204 }); }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const r = await applyChanges(client, { update: [{ ref: 'GES-90', assignee: 'Arthur-Olivier Fortin' }] }, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(putBodies.some((b) => b.fields.assignee?.accountId === '712020:abc')).toBe(true);
+  });
+
+  it('pose l\'estimation via setEstimate (format entier composé)', async () => {
+    const putBodies: any[] = [];
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') { putBodies.push(JSON.parse(opts.body)); return new Response(null, { status: 204 }); }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const r = await applyChanges(client, { update: [{ ref: 'GES-90', estimateHours: 10.5 }] }, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(putBodies.some((b) => b.fields.timetracking?.originalEstimate === '10h 30m')).toBe(true);
+  });
+
+  it('n\'écrit ni assignee ni timetracking si les champs sont absents (undefined)', async () => {
+    const putBodies: any[] = [];
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') { putBodies.push(JSON.parse(opts.body)); return new Response(null, { status: 204 }); }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const r = await applyChanges(client, { update: [{ ref: 'GES-90', statut: undefined, summary: 'Renommée' }] }, idx, ISSUES);
+    expect(r.errors).toEqual([]);
+    expect(putBodies.every((b) => !('assignee' in b.fields) && !('timetracking' in b.fields))).toBe(true);
+  });
+
+  it('erreur d\'assignation isolée n\'empêche pas le reste de l\'update (pas de crash global)', async () => {
+    const fetchFn = (async (url: string, opts: any) => {
+      const u = String(url); const m = opts?.method ?? 'GET';
+      if (u.includes('/user/search')) return new Response('[]', { status: 200 });
+      if (u.match(/\/issue\/[^/]+$/) && m === 'PUT') return new Response(null, { status: 204 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = { baseUrl: 'https://x', authHeader: 'Basic x', startFieldId: 'customfield_1', fetchFn };
+    const r = await applyChanges(client, { update: [{ ref: 'GES-90', summary: 'Renommée', assignee: 'Fantôme' }] }, idx, ISSUES);
+    expect(r.updated).toContain('GES-90');
+    expect(r.errors.some((e) => e.includes('GES-90') && e.includes('introuvable'))).toBe(true);
+  });
+});

@@ -347,6 +347,25 @@ export async function applyChanges(
         try { await transitionTo(client, key, u.statut); }
         catch (e) { result.errors.push(`transition ${u.ref}: ${(e as Error).message}`); }
       }
+      if (u.assignee !== undefined) {
+        try {
+          const accountId = u.assignee === null ? null : await resolveAccountId(client, u.assignee, assigneeCache);
+          await setAssignee(client, key, accountId);
+          log(`  [OK] assignee ${u.ref} → ${u.assignee ?? '(désassigné)'}`);
+        } catch (e) {
+          result.errors.push(`assignee ${u.ref}: ${(e as Error).message}`);
+          log(`  [ERREUR] assignee ${u.ref}: ${(e as Error).message}`);
+        }
+      }
+      if (u.estimateHours !== undefined) {
+        try {
+          await setEstimate(client, key, u.estimateHours);
+          log(`  [OK] estimation ${u.ref} → ${u.estimateHours ?? '(effacée)'}h`);
+        } catch (e) {
+          result.errors.push(`estimate ${u.ref}: ${(e as Error).message}`);
+          log(`  [ERREUR] estimate ${u.ref}: ${(e as Error).message}`);
+        }
+      }
       result.updated.push(key);
       log(`  [OK] maj ${u.ref} (${key})`);
     } catch (e) {
