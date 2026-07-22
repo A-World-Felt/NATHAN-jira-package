@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson,
-  type AnalysisTask,
+  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson, metrics,
+  type AnalysisTask, type MetricsInput,
 } from '../src/analysis.js';
 
 function task(over: Partial<AnalysisTask>): AnalysisTask {
@@ -69,5 +69,27 @@ describe('tasksByPerson', () => {
       task({ key: 'C', assignee: 'Nathan', statusCategory: 'done' }),
     ];
     expect(tasksByPerson(tasks, 'mathieu').map((t) => t.key).sort()).toEqual(['A', 'B']);
+  });
+});
+
+describe('metrics', () => {
+  it('agrège avancement, heures pointées et détail par projet', () => {
+    const input: MetricsInput = {
+      generatedAt: '2026-07-22T00:00:00.000Z',
+      worklogs: [{ hours: 2 }, { hours: 1.5 }],
+      tasks: [
+        task({ key: 'DEV-1', project: 'DEV', statusCategory: 'done' }),
+        task({ key: 'DEV-2', project: 'DEV', due: '2026-07-10' }),         // en retard, ouverte
+        task({ key: 'GES-1', project: 'GES', statusCategory: 'cancelled' }),// non active
+      ],
+    };
+    const m = metrics(input, '2026-07-22');
+    expect(m.total).toBe(3);
+    expect(m.active).toBe(2);          // DEV-1, DEV-2 (GES-1 annulée exclue)
+    expect(m.done).toBe(1);
+    expect(m.pctDone).toBe(50);        // 1/2
+    expect(m.loggedHours).toBe(3.5);
+    expect(m.overdue).toBe(1);
+    expect(m.byProject.find((p) => p.project === 'DEV')).toMatchObject({ total: 2, active: 2, done: 1, pct: 50, overdue: 1 });
   });
 });

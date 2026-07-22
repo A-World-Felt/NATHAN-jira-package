@@ -68,3 +68,46 @@ export function tasksByPerson(tasks: AnalysisTask[], name: string): TaskBrief[] 
   const n = name.trim().toLowerCase();
   return tasks.filter((t) => isOpen(t) && (t.assignee ?? '').toLowerCase().includes(n)).map(brief);
 }
+
+export interface ProjectMetrics { project: string; total: number; active: number; done: number; pct: number; overdue: number; }
+export interface Metrics {
+  generatedAt: string;
+  total: number; active: number; open: number; done: number; pctDone: number;
+  loggedHours: number;
+  overdue: number; upcoming14d: number; inProgress: number; blocked: number; unassigned: number;
+  byProject: ProjectMetrics[];
+}
+export interface MetricsInput {
+  tasks: AnalysisTask[];
+  worklogs: ReadonlyArray<{ hours: number }>;
+  generatedAt: string;
+}
+
+/** Métriques utiles agrégées (lightweight, sans chemin critique). */
+export function metrics(input: MetricsInput, today: string): Metrics {
+  const { tasks, worklogs, generatedAt } = input;
+  const active = tasks.filter(isActive);
+  const done = tasks.filter((t) => t.statusCategory === 'done');
+  const loggedHours = Math.round(worklogs.reduce((s, w) => s + w.hours, 0) * 10) / 10;
+  const projects = [...new Set(tasks.map((t) => t.project))].sort();
+  const byProject: ProjectMetrics[] = projects.map((p) => {
+    const ts = tasks.filter((t) => t.project === p);
+    const a = ts.filter(isActive);
+    const d = ts.filter((t) => t.statusCategory === 'done');
+    const od = ts.filter((t) => isOpen(t) && t.due != null && t.due < today);
+    return { project: p, total: ts.length, active: a.length, done: d.length,
+      pct: a.length ? Math.round((d.length / a.length) * 100) : 0, overdue: od.length };
+  });
+  return {
+    generatedAt,
+    total: tasks.length, active: active.length, open: tasks.filter(isOpen).length, done: done.length,
+    pctDone: active.length ? Math.round((done.length / active.length) * 100) : 0,
+    loggedHours,
+    overdue: overdueTasks(tasks, today).length,
+    upcoming14d: upcomingTasks(tasks, today, 14).length,
+    inProgress: inProgressTasks(tasks).length,
+    blocked: blockedTasks(tasks).length,
+    unassigned: tasks.filter((t) => isOpen(t) && !t.assignee).length,
+    byProject,
+  };
+}

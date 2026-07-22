@@ -58,6 +58,8 @@ export type {
   ApplyResult,
 } from './taches-apply.js';
 export {
-  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson,
+  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson, metrics,
 } from './analysis.js';
-export type { AnalysisTask, TaskBrief, OverdueBrief } from './analysis.js';
+export type {
+  AnalysisTask, TaskBrief, OverdueBrief, Metrics, ProjectMetrics, MetricsInput,
+} from './analysis.js';
