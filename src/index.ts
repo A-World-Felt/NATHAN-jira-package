@@ -63,3 +63,7 @@ export {
 export type {
   AnalysisTask, TaskBrief, OverdueBrief, Metrics, ProjectMetrics, MetricsInput,
 } from './analysis.js';
+export { loadProfile } from './profile.js';
+export type {
+  ConventionProfile, RouteIntent, RouteResult, LintResult, StatusVocab,
+} from './profile.js';
