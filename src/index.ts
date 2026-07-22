@@ -57,3 +57,13 @@ export type {
   ChangeCheck,
   ApplyResult,
 } from './taches-apply.js';
+export {
+  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson, metrics,
+} from './analysis.js';
+export type {
+  AnalysisTask, TaskBrief, OverdueBrief, Metrics, ProjectMetrics, MetricsInput,
+} from './analysis.js';
+export { loadProfile } from './profile.js';
+export type {
+  ConventionProfile, RouteIntent, RouteResult, LintResult, StatusVocab,
+} from './profile.js';
