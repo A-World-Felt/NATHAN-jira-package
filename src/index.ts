@@ -57,3 +57,7 @@ export type {
   ChangeCheck,
   ApplyResult,
 } from './taches-apply.js';
+export {
+  overdueTasks, upcomingTasks, inProgressTasks, blockedTasks, tasksByPerson,
+} from './analysis.js';
+export type { AnalysisTask, TaskBrief, OverdueBrief } from './analysis.js';
